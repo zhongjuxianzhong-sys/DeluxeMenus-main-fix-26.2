@@ -161,10 +161,15 @@ public final class VersionHelper {
      */
     private static boolean checkPaper() {
         try {
-            Class.forName("com.destroystokyo.paper.PaperConfig");
+            Class.forName("io.papermc.paper.configuration.GlobalConfiguration");
             return true;
         } catch (ClassNotFoundException ignored) {
-            return false;
+            try {
+                Class.forName("com.destroystokyo.paper.PaperConfig");
+                return true;
+            } catch (ClassNotFoundException ignoredAgain) {
+                return false;
+            }
         }
     }
 

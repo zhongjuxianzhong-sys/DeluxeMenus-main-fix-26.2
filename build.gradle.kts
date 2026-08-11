@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.gradleup.shadow") version("8.3.5")
+    id("com.gradleup.shadow") version("9.6.1")
     id("com.github.ben-manes.versions") version("0.51.0")
 }
 
@@ -14,6 +14,7 @@ version = "$majorVersion-$minorVersion"
 
 repositories {
     mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
     maven("https://s01.oss.sonatype.org/content/repositories/snapshots/")
     maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
     maven("https://repo.glaremasters.me/repository/public/")
@@ -25,7 +26,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly(libs.spigot)
+    compileOnly(libs.paper)
 
     compileOnly(libs.vault)
     compileOnly(libs.authlib)
@@ -53,6 +54,10 @@ dependencies {
 }
 
 tasks {
+    jar {
+        archiveClassifier.set("plain")
+    }
+
     shadowJar {
         relocate("org.objectweb.asm", "com.extendedclip.deluxemenus.libs.asm")
         relocate("org.openjdk.nashorn", "com.extendedclip.deluxemenus.libs.nashorn")
@@ -60,10 +65,14 @@ tasks {
         relocate("org.bstats", "com.extendedclip.deluxemenus.libs.bstats")
         archiveFileName.set("DeluxeMenus-${rootProject.version}.jar")
     }
+
+    build {
+        dependsOn(shadowJar)
+    }
+
     java {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-        disableAutoTargetJvm()
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 
     processResources {

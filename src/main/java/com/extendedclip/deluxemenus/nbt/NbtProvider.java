@@ -29,30 +29,34 @@ public final class NbtProvider {
     private static Constructor<?> nbtCompoundConstructor;
 
     static {
-        try {
-            final Class<?> compoundClass = VersionHelper.getNMSClass("nbt", "NBTTagCompound");
-            final Class<?> itemStackClass = VersionHelper.getNMSClass("world.item", "ItemStack");
-            final Class<?> inventoryClass = VersionHelper.getCraftClass("inventory.CraftItemStack");
-
-            containsMethod = compoundClass.getMethod(VersionConstants.CONTAINS_METHOD_NAME, String.class);
-            getStringMethod = compoundClass.getMethod(VersionConstants.GET_STRING_METHOD_NAME, String.class);
-            setStringMethod = compoundClass.getMethod(VersionConstants.SET_STRING_METHOD_NAME, String.class, String.class);
-            setBooleanMethod = compoundClass.getMethod(VersionConstants.SET_BOOLEAN_METHOD_NAME, String.class, boolean.class);
-            setByteMethod = compoundClass.getMethod(VersionConstants.SET_BYTE_METHOD_NAME, String.class, byte.class);
-            setShortMethod = compoundClass.getMethod(VersionConstants.SET_SHORT_METHOD_NAME, String.class, short.class);
-            setIntMethod = compoundClass.getMethod(VersionConstants.SET_INTEGER_METHOD_NAME, String.class, int.class);
-            removeTagMethod = compoundClass.getMethod(VersionConstants.REMOVE_TAG_METHOD_NAME, String.class);
-            hasTagMethod = itemStackClass.getMethod(VersionConstants.HAS_TAG_METHOD_NAME);
-            getTagMethod = itemStackClass.getMethod(VersionConstants.GET_TAG_METHOD_NAME);
-            setTagMethod = itemStackClass.getMethod(VersionConstants.SET_TAG_METHOD_NAME, compoundClass);
-            nbtCompoundConstructor = compoundClass.getDeclaredConstructor();
-
-            asNMSCopyMethod = inventoryClass.getMethod("asNMSCopy", ItemStack.class);
-            asBukkitCopyMethod = inventoryClass.getMethod("asBukkitCopy", itemStackClass);
-
-            NBT_HOOKED = true;
-        } catch (NoSuchMethodException | ClassNotFoundException e) {
+        if (VersionHelper.CURRENT_VERSION >= 2600) {
             NBT_HOOKED = false;
+        } else {
+            try {
+                final Class<?> compoundClass = VersionHelper.getNMSClass("nbt", "NBTTagCompound");
+                final Class<?> itemStackClass = VersionHelper.getNMSClass("world.item", "ItemStack");
+                final Class<?> inventoryClass = VersionHelper.getCraftClass("inventory.CraftItemStack");
+
+                containsMethod = compoundClass.getMethod(VersionConstants.CONTAINS_METHOD_NAME, String.class);
+                getStringMethod = compoundClass.getMethod(VersionConstants.GET_STRING_METHOD_NAME, String.class);
+                setStringMethod = compoundClass.getMethod(VersionConstants.SET_STRING_METHOD_NAME, String.class, String.class);
+                setBooleanMethod = compoundClass.getMethod(VersionConstants.SET_BOOLEAN_METHOD_NAME, String.class, boolean.class);
+                setByteMethod = compoundClass.getMethod(VersionConstants.SET_BYTE_METHOD_NAME, String.class, byte.class);
+                setShortMethod = compoundClass.getMethod(VersionConstants.SET_SHORT_METHOD_NAME, String.class, short.class);
+                setIntMethod = compoundClass.getMethod(VersionConstants.SET_INTEGER_METHOD_NAME, String.class, int.class);
+                removeTagMethod = compoundClass.getMethod(VersionConstants.REMOVE_TAG_METHOD_NAME, String.class);
+                hasTagMethod = itemStackClass.getMethod(VersionConstants.HAS_TAG_METHOD_NAME);
+                getTagMethod = itemStackClass.getMethod(VersionConstants.GET_TAG_METHOD_NAME);
+                setTagMethod = itemStackClass.getMethod(VersionConstants.SET_TAG_METHOD_NAME, compoundClass);
+                nbtCompoundConstructor = compoundClass.getDeclaredConstructor();
+
+                asNMSCopyMethod = inventoryClass.getMethod("asNMSCopy", ItemStack.class);
+                asBukkitCopyMethod = inventoryClass.getMethod("asBukkitCopy", itemStackClass);
+
+                NBT_HOOKED = true;
+            } catch (NoSuchMethodException | ClassNotFoundException e) {
+                NBT_HOOKED = false;
+            }
         }
     }
 
