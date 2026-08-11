@@ -26,51 +26,6 @@
 
 未安装 PlaceholderAPI 时，DeluxeMenus 会在启动阶段自行禁用。
 
-## 安装
-
-1. 完整停止 Paper 服务端。
-2. 安装与 26.2 兼容的 PlaceholderAPI。
-3. 将根目录或 `build/libs` 中不带 `-plain` 后缀的 DeluxeMenus JAR 放入服务端 `plugins` 目录。
-4. 删除 `plugins` 目录中的旧版 DeluxeMenus JAR，避免重复加载。
-5. 启动服务端，检查控制台是否正常加载 DeluxeMenus。
-
-正确的部署文件示例：
-
-```text
-DeluxeMenus-1.14.2-DEV-null.jar
-```
-
-不要部署以下开发用普通 JAR：
-
-```text
-DeluxeMenus-1.14.2-DEV-null-plain.jar
-```
-
-不带 `-plain` 后缀的 Shadow JAR 已包含并重定位 bStats、Adventure、Nashorn 和 ASM 等运行依赖。部署 `-plain.jar` 会导致 `NoClassDefFoundError`。
-
-## 从源码构建
-
-Windows PowerShell：
-
-```powershell
-.\gradlew.bat clean build
-```
-
-Linux 或 macOS：
-
-```bash
-./gradlew clean build
-```
-
-构建结果位于：
-
-```text
-build/libs/DeluxeMenus-<version>.jar
-build/libs/DeluxeMenus-<version>-plain.jar
-```
-
-`build` 任务会自动执行 `shadowJar`。用于服务端部署的是不带 `-plain` 后缀的文件。
-
 ## 菜单配置
 
 首次启动后，独立菜单配置目录为：
@@ -192,10 +147,6 @@ items:
 使用可选物品来源前，请确保对应插件本身也兼容 Paper 26.2。
 
 ## 故障排查
-
-### 缺少 `org/bstats/charts/CustomChart`
-
-服务端加载了 `-plain.jar` 或旧的普通 JAR。请改用不带 `-plain` 后缀、大小约 4 MB 的 Shadow JAR。
 
 ### 插件启动后自行禁用
 
