@@ -5,8 +5,11 @@ import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 public final class NbtProvider {
 
@@ -26,11 +29,17 @@ public final class NbtProvider {
     private static Method asNMSCopyMethod;
     private static Method asBukkitCopyMethod;
 
+    private static boolean MODERN_DATA_COMPONENTS;
+    private static Object customDataComponentType;
+    private static Method customDataUpdateMethod;
+    private static Method itemStackGetDataMethod;
+    private static Method customDataCopyTagMethod;
+
     private static Constructor<?> nbtCompoundConstructor;
 
     static {
         if (VersionHelper.CURRENT_VERSION >= 2600) {
-            NBT_HOOKED = false;
+            setupModernDataComponents();
         } else {
             try {
                 final Class<?> compoundClass = VersionHelper.getNMSClass("nbt", "NBTTagCompound");
@@ -60,6 +69,41 @@ public final class NbtProvider {
         }
     }
 
+    private static void setupModernDataComponents() {
+        try {
+            final Class<?> compoundClass = Class.forName("net.minecraft.nbt.CompoundTag");
+            final Class<?> itemStackClass = Class.forName("net.minecraft.world.item.ItemStack");
+            final Class<?> dataComponentTypeClass = Class.forName("net.minecraft.core.component.DataComponentType");
+            final Class<?> dataComponentsClass = Class.forName("net.minecraft.core.component.DataComponents");
+            final Class<?> customDataClass = Class.forName("net.minecraft.world.item.component.CustomData");
+            final Class<?> craftItemStackClass = Class.forName("org.bukkit.craftbukkit.inventory.CraftItemStack");
+
+            final Field customDataField = dataComponentsClass.getField("CUSTOM_DATA");
+            customDataComponentType = customDataField.get(null);
+            customDataUpdateMethod = customDataClass.getMethod("update", dataComponentTypeClass, itemStackClass, Consumer.class);
+            itemStackGetDataMethod = itemStackClass.getMethod("get", dataComponentTypeClass);
+            customDataCopyTagMethod = customDataClass.getMethod("copyTag");
+
+            containsMethod = compoundClass.getMethod("contains", String.class);
+            getStringMethod = compoundClass.getMethod("getString", String.class);
+            setStringMethod = compoundClass.getMethod("putString", String.class, String.class);
+            setBooleanMethod = compoundClass.getMethod("putBoolean", String.class, boolean.class);
+            setByteMethod = compoundClass.getMethod("putByte", String.class, byte.class);
+            setShortMethod = compoundClass.getMethod("putShort", String.class, short.class);
+            setIntMethod = compoundClass.getMethod("putInt", String.class, int.class);
+            removeTagMethod = compoundClass.getMethod("remove", String.class);
+
+            asNMSCopyMethod = craftItemStackClass.getMethod("asNMSCopy", ItemStack.class);
+            asBukkitCopyMethod = craftItemStackClass.getMethod("asBukkitCopy", itemStackClass);
+
+            MODERN_DATA_COMPONENTS = true;
+            NBT_HOOKED = true;
+        } catch (ReflectiveOperationException exception) {
+            MODERN_DATA_COMPONENTS = false;
+            NBT_HOOKED = false;
+        }
+    }
+
     public static boolean isAvailable() {
         return NBT_HOOKED;
     }
@@ -75,6 +119,7 @@ public final class NbtProvider {
     public static ItemStack setString(final ItemStack itemStack, final String key, final String value) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return itemStack;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> setString(tag, key, value));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -97,6 +142,7 @@ public final class NbtProvider {
     public static ItemStack setBoolean(final ItemStack itemStack, final String key, final boolean value) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return itemStack;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> setBoolean(tag, key, value));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -117,6 +163,7 @@ public final class NbtProvider {
     public static String getString(final ItemStack itemStack, final String key) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return null;
+        if (MODERN_DATA_COMPONENTS) return getModernString(itemStack, key);
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -127,6 +174,7 @@ public final class NbtProvider {
     public static ItemStack setByte(final ItemStack itemStack, final String key, final byte value) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return null;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> setByte(tag, key, value));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -140,6 +188,7 @@ public final class NbtProvider {
     public static ItemStack setShort(final ItemStack itemStack, final String key, final short value) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return null;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> setShort(tag, key, value));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -153,6 +202,7 @@ public final class NbtProvider {
     public static ItemStack setInt(final ItemStack itemStack, final String key, final int value) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return null;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> setInt(tag, key, value));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -165,6 +215,7 @@ public final class NbtProvider {
 
     public static boolean hasKey(final ItemStack itemStack, final String key) {
         if (itemStack == null) return false;
+        if (MODERN_DATA_COMPONENTS) return hasModernKey(itemStack, key);
 
         final Object nmsItemStack = asNMSCopy(itemStack);
         final Object itemCompound = hasTag(nmsItemStack) ? getTag(nmsItemStack) : newNBTTagCompound();
@@ -178,6 +229,7 @@ public final class NbtProvider {
     public static ItemStack removeKey(final ItemStack itemStack, final String key) {
         if (itemStack == null) return null;
         if (itemStack.getType() == Material.AIR) return null;
+        if (MODERN_DATA_COMPONENTS) return updateModernData(itemStack, tag -> removeTag(tag, key));
 
         Object nmsItemStack = asNMSCopy(itemStack);
         if (!hasTag(nmsItemStack)) return itemStack;
@@ -187,6 +239,47 @@ public final class NbtProvider {
         setTag(nmsItemStack, itemCompound);
 
         return asBukkitCopy(nmsItemStack);
+    }
+
+    private static ItemStack updateModernData(final ItemStack itemStack, final Consumer<Object> tagUpdater) {
+        final Object nmsItemStack = asNMSCopy(itemStack);
+        if (nmsItemStack == null) return itemStack;
+
+        try {
+            customDataUpdateMethod.invoke(null, customDataComponentType, nmsItemStack, tagUpdater);
+            final ItemStack updatedItemStack = asBukkitCopy(nmsItemStack);
+            return updatedItemStack == null ? itemStack : updatedItemStack;
+        } catch (IllegalAccessException | InvocationTargetException exception) {
+            return itemStack;
+        }
+    }
+
+    private static Object getModernTag(final ItemStack itemStack) {
+        final Object nmsItemStack = asNMSCopy(itemStack);
+        if (nmsItemStack == null) return null;
+
+        try {
+            final Object customData = itemStackGetDataMethod.invoke(nmsItemStack, customDataComponentType);
+            return customData == null ? null : customDataCopyTagMethod.invoke(customData);
+        } catch (IllegalAccessException | InvocationTargetException exception) {
+            return null;
+        }
+    }
+
+    private static String getModernString(final ItemStack itemStack, final String key) {
+        final Object tag = getModernTag(itemStack);
+        return tag == null ? null : getString(tag, key);
+    }
+
+    private static boolean hasModernKey(final ItemStack itemStack, final String key) {
+        final Object tag = getModernTag(itemStack);
+        if (tag == null) return false;
+
+        try {
+            return (boolean) containsMethod.invoke(tag, key);
+        } catch (IllegalAccessException | InvocationTargetException exception) {
+            return false;
+        }
     }
 
     /**
@@ -240,7 +333,11 @@ public final class NbtProvider {
      */
     private static String getString(final Object itemCompound, final String key) {
         try {
-            return (String) getStringMethod.invoke(itemCompound, key);
+            final Object value = getStringMethod.invoke(itemCompound, key);
+            if (value instanceof Optional<?> optional) {
+                return optional.filter(String.class::isInstance).map(String.class::cast).orElse(null);
+            }
+            return (String) value;
         } catch (IllegalAccessException | InvocationTargetException e) {
             return null;
         }

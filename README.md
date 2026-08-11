@@ -66,14 +66,16 @@ build/libs/DeluxeMenus-<version>.jar
 3. 确保不要同时保留旧版 DeluxeMenus JAR 或 `-plain.jar`。
 4. 完整启动服务端并检查控制台加载日志。
 
-### 26.2 已知限制
+### 26.2 NBT 数据组件
 
-Minecraft 26.2 使用新的数据组件模型，旧版 NMS 反射 NBT 实现不再兼容。因此以下菜单物品配置项在 Paper 26.2 上会被跳过：
+Minecraft 26.2 将物品原始 NBT 迁移为数据组件。此分支已将旧 NMS 标签逻辑迁移到 `CUSTOM_DATA` 数据组件，因此以下菜单物品配置项可继续使用，并会保留原有键名和值类型：
 
 ```text
 nbt_byte, nbt_bytes, nbt_short, nbt_shorts,
 nbt_int, nbt_ints, nbt_string, nbt_strings
 ```
+
+该实现使用 Paper 26.2 服务端提供的 Mojang 映射内部类进行运行时反射，不会将 NMS 类编译进插件。若未来 Paper 改动 `CUSTOM_DATA` 的内部签名，插件会在启动时输出数据钩子不可用的警告，而不会阻止菜单加载。
 
 菜单物品防复制标记仍使用 Bukkit/Paper 的 PersistentDataContainer，可正常工作。其余常用菜单功能，例如物品名称、Lore、附魔、模型数据、PlaceholderAPI、权限和点击动作，已使用 Paper 26.2 API 编译验证。
 
