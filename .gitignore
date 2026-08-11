@@ -22,8 +22,25 @@ Thumbs.db
 # Logs
 *.log
 
+# Gradle wrapper
 gradle/wrapper/gradle-wrapper.jar
 
+# Build artifacts
 *.jar
 *.war
 *.ear
+/DeluxeMenus-*.jar
+
+# Local configuration
+gradle.properties.local
+
+# Test reports
+test-output/
+reports/
+test-results/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
