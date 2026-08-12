@@ -168,7 +168,6 @@ items:
 - [Spigot 页面](https://www.spigotmc.org/resources/11734/)
 - [Discord 支持](https://helpch.at/discord)
 - [bStats](https://bstats.org/plugin/bukkit/DeluxeMenus/445)
-- [贡献指南](CONTRIBUTING.md)
 
 ## 许可证
 
