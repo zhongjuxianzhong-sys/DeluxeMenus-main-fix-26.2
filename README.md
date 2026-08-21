@@ -2,7 +2,7 @@
 
 这是一个面向 Minecraft 26.2 Paper 服务端适配的 DeluxeMenus 源码分支。DeluxeMenus 是一款由 YAML 配置驱动的物品栏 GUI 菜单插件，可根据权限、PlaceholderAPI 变量和条件为玩家展示不同物品，并在点击后执行命令、消息、菜单跳转等操作。
 
-本分支基于 DeluxeMenus `1.14.2`，主要完成了 Paper 26.2 API、Java 25、Gradle 9、完整依赖打包以及新版物品 `CUSTOM_DATA` 数据组件的适配。
+本分支基于 DeluxeMenus `1.14.2`，主要完成了 Paper 26.2 API、Java 25、Gradle 9、完整依赖打包、新版物品 `CUSTOM_DATA` 数据组件及菜单生命周期线程安全的适配。
 
 ## 主要功能
 
@@ -14,6 +14,7 @@
 - 支持动态物品名称、Lore、数量、模型数据和数据组件。
 - 支持 Vault、ItemsAdder、Oraxen、Nexo、CraftEngine、MMOItems 等可选插件钩子。
 - 使用 PDC 标记临时菜单物品，降低菜单物品复制风险。
+- 菜单打开、刷新、关闭和重载统一在 Paper 主线程执行，避免异步 Inventory、PlaceholderAPI 和第三方 Hook 调用。
 
 ## 环境要求
 
@@ -22,9 +23,55 @@
 | 服务端 | Paper 26.2 |
 | Java | Java 25 或更高版本 |
 | 必需依赖 | [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) |
-| 构建工具 | 项目自带 Gradle Wrapper 9.6.0 |
+| 构建工具 | Gradle 9.6.0 |
 
 未安装 PlaceholderAPI 时，DeluxeMenus 会在启动阶段自行禁用。
+
+## 线程安全
+
+菜单及其依赖的 Bukkit API 并不支持异步访问。本分支将菜单生命周期统一限制在 Paper 主线程：
+
+- `openMenu`、`refreshForAll`、`closeMenu` 和菜单卸载入口从异步线程调用时会自动投递到主线程。
+- `PreOpen`、要求判断、PlaceholderAPI、Vault、JavaScript、第三方物品 Hook、物品构建、Inventory 填充和菜单事件均在同一主线程上下文完成。
+- 菜单刷新和 Placeholder 更新使用同步重复任务，并在菜单关闭、玩家退出、重载和停服时取消。
+- 每次刷新都会确认 Holder 仍属于该玩家当前打开的菜单；关闭后的排队刷新不会再更新 Inventory。
+- 菜单注册表按玩家 UUID 保存 Holder，并向命令和 bStats 返回不可变快照，避免重载时并发遍历可变集合。
+
+仍保留的异步操作只包含外部 HTTP（更新检查、Dump 上传）和仅操作并发冷却状态的清扫任务。它们的 Bukkit 状态、日志和玩家消息回调都会切回主线程。
+
+这意味着第三方插件可以从异步线程调用现有公开菜单 API，而无需自行安排主线程任务；但不要在自己的异步代码中直接读取或修改 `Player`、`Inventory`、`ItemStack` 或菜单 Hook。
+
+## 构建和测试
+
+项目目标为 Java 25 和 Gradle 9.6。发布构建使用 Shadow 打包，输出 JAR 位于 `build/libs/`：
+
+```text
+DeluxeMenus-<version>.jar        # 可部署的 Shadow JAR
+DeluxeMenus-<version>-plain.jar  # 未打包依赖的普通 JAR
+```
+
+在 Windows PowerShell 中：
+
+```powershell
+# Wrapper JAR 存在时
+./gradlew.bat compileJava --no-daemon
+./gradlew.bat test --no-daemon
+./gradlew.bat build --no-daemon
+
+# 当前工作区缺少 gradle/wrapper/gradle-wrapper.jar 时，使用本地 Gradle 9.6
+& .\build\gradle-9.6.0\bin\gradle.bat `
+  --gradle-user-home .\build\.gradle-user-local `
+  build --no-daemon
+```
+
+测试使用 JUnit 5 和 Mockito，不依赖 MockBukkit，覆盖主线程投递、并发菜单注册表快照、失效 Holder 刷新、更新检查结果发布及 Dump 回调调度。
+
+静态检查可确认菜单包不包含异步调度调用：
+
+```powershell
+rg -n "runTaskAsynchronously|runTaskTimerAsynchronously" src/main/java/com/extendedclip/deluxemenus/menu
+rg -n "callSyncMethod|\.get\(\)" src/main/java/com/extendedclip/deluxemenus/hooks/MMOItemsHook.java
+```
 
 ## 菜单配置
 
@@ -159,6 +206,12 @@ items:
 ### 不建议热加载
 
 不要使用 PlugMan 等工具热加载或热卸载 DeluxeMenus。修改配置后使用 `/dm reload`，更新插件 JAR 时完整重启服务端。
+
+### 出现 `AsyncCatcher`、并发修改或菜单刷新异常
+
+本分支的菜单包不应创建异步 Bukkit 任务。先检查是否有其他插件或自定义扩展从异步代码直接操作了 `Player`、`Inventory`、`ItemStack` 或 DeluxeMenus 的内部对象。第三方调用应使用 `Menu#openMenu`、`Menu#closeMenu` 或 `Menu#refreshForAll` 等公开入口，让插件自动投递到主线程。
+
+若问题只发生在特定物品来源，确认对应可选插件已启用且兼容 Paper 26.2；MMOItems 等 Hook 会在菜单主线程边界内调用，不应从异步线程单独调用。
 
 ## 上游项目与支持
 
