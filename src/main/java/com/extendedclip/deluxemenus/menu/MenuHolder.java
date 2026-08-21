@@ -2,8 +2,8 @@ package com.extendedclip.deluxemenus.menu;
 
 import com.extendedclip.deluxemenus.DeluxeMenus;
 import com.extendedclip.deluxemenus.menu.options.MenuOptions;
+import com.extendedclip.deluxemenus.utils.MainThread;
 import com.extendedclip.deluxemenus.utils.StringUtils;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -14,6 +14,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -25,9 +26,10 @@ public class MenuHolder implements InventoryHolder {
 
     private final DeluxeMenus plugin;
     private final Player viewer;
+    private final MainThread mainThread;
 
     private Player placeholderPlayer;
-    private String menuName;
+    private volatile String menuName;
     private Set<MenuItem> activeItems;
     private BukkitTask updateTask = null;
     private BukkitTask refreshTask = null;
@@ -38,16 +40,26 @@ public class MenuHolder implements InventoryHolder {
     private Map<String, String> typedArgs;
 
     public MenuHolder(final @NotNull DeluxeMenus plugin, final @NotNull Player viewer) {
+        this(plugin, viewer, new MainThread(plugin));
+    }
+
+    MenuHolder(
+            final @NotNull DeluxeMenus plugin,
+            final @NotNull Player viewer,
+            final @NotNull MainThread mainThread
+    ) {
         this.plugin = plugin;
         this.viewer = viewer;
+        this.mainThread = mainThread;
     }
 
     public MenuHolder(final @NotNull DeluxeMenus plugin, final @NotNull Player viewer, final @NotNull String menuName,
                       final @NotNull Set<@NotNull MenuItem> activeItems, final @NotNull Inventory inventory) {
         this.plugin = plugin;
         this.viewer = viewer;
+        this.mainThread = new MainThread(plugin);
         this.menuName = menuName;
-        this.activeItems = activeItems;
+        this.activeItems = Set.copyOf(activeItems);
         this.inventory = inventory;
     }
 
@@ -76,7 +88,7 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public void setActiveItems(Set<MenuItem> items) {
-        this.activeItems = items;
+        this.activeItems = items == null ? Collections.emptySet() : Set.copyOf(items);
     }
 
     public MenuHolder getHolder() {
@@ -84,6 +96,10 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public MenuItem getItem(int slot) {
+        if (activeItems == null) {
+            return null;
+        }
+
         for (MenuItem item : activeItems) {
             if (item.options().slot() == slot) {
                 return item;
@@ -93,6 +109,10 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public Optional<Menu> getMenu() {
+        if (menuName == null) {
+            return Optional.empty();
+        }
+
         return Menu.getMenuByName(menuName);
     }
 
@@ -124,6 +144,13 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public void refreshMenu() {
+        mainThread.run(this::refreshMenuNow);
+    }
+
+    private void refreshMenuNow() {
+        if (updating || !viewer.isOnline() || !Menu.isCurrentHolder(this) || inventory == null) {
+            return;
+        }
 
         Optional<Menu> optionalMenu = getMenu();
         if (optionalMenu.isEmpty()) {
@@ -137,9 +164,7 @@ public class MenuHolder implements InventoryHolder {
         }
 
         setUpdating(true);
-
-        Bukkit.getScheduler().runTaskAsynchronously(this.plugin, () -> {
-
+        try {
             final Set<MenuItem> active = new HashSet<>();
 
             for (int i = 0; i < getInventory().getSize(); i++) {
@@ -174,49 +199,51 @@ public class MenuHolder implements InventoryHolder {
 
             if (active.isEmpty()) {
                 Menu.closeMenu(plugin, getViewer(), true);
+                return;
             }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            boolean update = false;
 
-                boolean update = false;
+            for (MenuItem item : active) {
 
-                for (MenuItem item : active) {
+                ItemStack iStack = item.getItemStack(this);
 
-                    ItemStack iStack = item.getItemStack(this);
-
-                    if (iStack == null) {
-                        continue;
-                    }
-
-                    iStack = plugin.getMenuItemMarker().mark(iStack);
-
-                    int slot = item.options().slot();
-
-                    if (slot >= menu.options().size()) {
-                        continue;
-                    }
-
-                    if (item.options().updatePlaceholders()) {
-                        update = true;
-                    }
-
-                    getInventory().setItem(item.options().slot(), iStack);
+                if (iStack == null) {
+                    continue;
                 }
 
-                setActiveItems(active);
+                iStack = plugin.getMenuItemMarker().mark(iStack);
 
-                if (update && updateTask == null) {
-                    startUpdatePlaceholdersTask();
-                } else if(!update && updateTask != null) {
-                    stopPlaceholderUpdate();
+                int slot = item.options().slot();
+
+                if (slot >= menu.options().size()) {
+                    continue;
                 }
 
-                setUpdating(false);
-            });
-        });
+                if (item.options().updatePlaceholders()) {
+                    update = true;
+                }
+
+                getInventory().setItem(item.options().slot(), iStack);
+            }
+
+            setActiveItems(Set.copyOf(active));
+
+            if (update && updateTask == null) {
+                startUpdatePlaceholdersTask();
+            } else if (!update && updateTask != null) {
+                stopPlaceholderUpdate();
+            }
+        } finally {
+            setUpdating(false);
+        }
     }
 
     public void stopPlaceholderUpdate() {
+        mainThread.run(this::stopPlaceholderUpdateNow);
+    }
+
+    private void stopPlaceholderUpdateNow() {
         if (updateTask != null) {
             try {
                 updateTask.cancel();
@@ -227,6 +254,10 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public void stopRefreshTask() {
+        mainThread.run(this::stopRefreshTaskNow);
+    }
+
+    private void stopRefreshTaskNow() {
         if(refreshTask != null) {
             try {
                 refreshTask.cancel();
@@ -237,8 +268,16 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public void startRefreshTask() {
+        mainThread.run(this::startRefreshTaskNow);
+    }
+
+    private void startRefreshTaskNow() {
+        if (!viewer.isOnline() || !Menu.isCurrentHolder(this) || inventory == null) {
+            return;
+        }
+
         if(refreshTask != null) {
-            stopRefreshTask();
+            stopRefreshTaskNow();
         }
 
         refreshTask = new BukkitRunnable() {
@@ -246,7 +285,7 @@ public class MenuHolder implements InventoryHolder {
             public void run() {
                 refreshMenu();
             }
-        }.runTaskTimerAsynchronously(plugin, 20L,
+        }.runTaskTimer(plugin, 20L,
                 20L * Menu.getMenuByName(menuName)
                         .map(Menu::options)
                         .map(MenuOptions::refreshInterval)
@@ -254,9 +293,16 @@ public class MenuHolder implements InventoryHolder {
     }
 
     public void startUpdatePlaceholdersTask() {
+        mainThread.run(this::startUpdatePlaceholdersTaskNow);
+    }
+
+    private void startUpdatePlaceholdersTaskNow() {
+        if (!viewer.isOnline() || !Menu.isCurrentHolder(this) || inventory == null) {
+            return;
+        }
 
         if (updateTask != null) {
-            stopPlaceholderUpdate();
+            stopPlaceholderUpdateNow();
         }
 
         updateTask = new BukkitRunnable() {
@@ -264,7 +310,7 @@ public class MenuHolder implements InventoryHolder {
             @Override
             public void run() {
 
-                if (updating) {
+                if (updating || !viewer.isOnline() || !Menu.isCurrentHolder(MenuHolder.this) || inventory == null) {
                     return;
                 }
 
@@ -317,7 +363,7 @@ public class MenuHolder implements InventoryHolder {
                 }
             }
 
-        }.runTaskTimerAsynchronously(plugin, 20L,
+        }.runTaskTimer(plugin, 20L,
                 20L * Menu.getMenuByName(menuName)
                         .map(Menu::options)
                         .map(MenuOptions::updateInterval)

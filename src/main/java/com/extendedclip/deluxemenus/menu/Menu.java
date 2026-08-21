@@ -1,14 +1,13 @@
 package com.extendedclip.deluxemenus.menu;
 
 import com.extendedclip.deluxemenus.DeluxeMenus;
-import com.extendedclip.deluxemenus.action.ClickHandler;
-import com.extendedclip.deluxemenus.dupe.MenuItemMarker;
 import com.extendedclip.deluxemenus.events.DeluxeMenusOpenMenuEvent;
 import com.extendedclip.deluxemenus.events.DeluxeMenusPreOpenMenuEvent;
 import com.extendedclip.deluxemenus.menu.command.RegistrableMenuCommand;
 import com.extendedclip.deluxemenus.menu.options.MenuOptions;
 import com.extendedclip.deluxemenus.requirement.RequirementList;
 import com.extendedclip.deluxemenus.utils.DebugLevel;
+import com.extendedclip.deluxemenus.utils.MainThread;
 import com.extendedclip.deluxemenus.utils.StringUtils;
 
 import java.util.*;
@@ -25,9 +24,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class Menu {
 
-    private static final Map<String, Menu> menus = new HashMap<>();
-    private static final Set<MenuHolder> menuHolders = new HashSet<>();
-    private static final Map<UUID, Menu> lastOpenedMenus = new HashMap<>();
+    private static final MenuRegistry REGISTRY = new MenuRegistry();
 
     private final DeluxeMenus plugin;
     private final MenuOptions options;
@@ -53,10 +50,15 @@ public class Menu {
             this.command.register();
         }
 
-        menus.put(this.options.name(), this);
+        REGISTRY.registerMenu(this.options.name(), this);
     }
 
     public static void unload(final @NotNull DeluxeMenus plugin, final @NotNull String name) {
+        if (!Bukkit.isPrimaryThread()) {
+            MainThread.run(plugin, () -> unload(plugin, name));
+            return;
+        }
+
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (isInMenu(p, name)) {
                 closeMenu(plugin, p, true);
@@ -68,11 +70,17 @@ public class Menu {
             return;
         }
 
-        optionalMenu.get().unregisterCommand();
-        menus.remove(name);
+        final Menu loadedMenu = optionalMenu.get();
+        loadedMenu.unregisterCommand();
+        REGISTRY.removeMenu(loadedMenu.options().name(), loadedMenu);
     }
 
     public static void unload(final @NotNull DeluxeMenus plugin) {
+        if (!Bukkit.isPrimaryThread()) {
+            MainThread.run(plugin, () -> unload(plugin));
+            return;
+        }
+
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (isInMenu(p)) {
                 closeMenu(plugin, p, true);
@@ -81,9 +89,7 @@ public class Menu {
         for (Menu menu : Menu.getAllMenus()) {
             menu.unregisterCommand();
         }
-        menus.clear();
-        menuHolders.clear();
-        lastOpenedMenus.clear();
+        REGISTRY.clearAll();
     }
 
     private void unregisterCommand() {
@@ -102,25 +108,25 @@ public class Menu {
                 closeMenuForShutdown(plugin, player);
             }
         }
-        menus.clear();
+        REGISTRY.clearAll();
     }
 
     public static int getLoadedMenuSize() {
-        return menus.size();
+        return REGISTRY.menuCount();
     }
 
     public static @NotNull Set<String> getAllMenuNames() {
-        return menus.keySet();
+        return REGISTRY.menuNamesSnapshot();
     }
 
     public static @NotNull Collection<Menu> getAllMenus() {
-        return menus.values();
+        return REGISTRY.menusSnapshot();
     }
 
     // Menus need to be stored in a list because config.yml can contain multiple menus.
     // This can be changed once we remove support for menus inside the config file.
     public static @NotNull TreeMap<String, List<Menu>> getPathSortedMenus() {
-        return menus.values().stream().map(m -> Map.entry(m.path(), m)).collect(
+        return REGISTRY.menusSnapshot().stream().map(m -> Map.entry(m.path(), m)).collect(
                 TreeMap::new, (tree, entry) -> {
                     final List<Menu> list = tree.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
                     list.add(entry.getValue());
@@ -137,11 +143,11 @@ public class Menu {
     }
 
     public static @NotNull Optional<Menu> getMenuByName(final @NotNull String name) {
-        return menus.entrySet().stream().filter(e -> e.getKey().equalsIgnoreCase(name)).findFirst().map(Entry::getValue);
+        return REGISTRY.getMenu(name);
     }
 
     public static @NotNull Optional<Menu> getMenuByCommand(final @NotNull String command) {
-        return menus.values().stream().filter(m -> m.getMenuCommandUsed(command).isPresent()).findFirst();
+        return REGISTRY.menusSnapshot().stream().filter(m -> m.getMenuCommandUsed(command).isPresent()).findFirst();
     }
 
     public static boolean isMenuCommand(final @NotNull String command) {
@@ -149,15 +155,22 @@ public class Menu {
     }
 
     public static boolean isInMenu(final @NotNull Player player) {
-        return menuHolders.stream().anyMatch(h -> h.getViewerName().equals(player.getName()));
+        return REGISTRY.getHolder(player.getUniqueId()).isPresent();
     }
 
     public static boolean isInMenu(final @NotNull Player player, final @NotNull String menu) {
-        return menuHolders.stream().anyMatch(h -> h.getMenuName().equals(menu) && h.getViewerName().equals(player.getName()));
+        return REGISTRY.getHolder(player.getUniqueId())
+                .map(MenuHolder::getMenuName)
+                .map(name -> name.equalsIgnoreCase(menu))
+                .orElse(false);
     }
 
     public static Optional<MenuHolder> getMenuHolder(final @NotNull Player player) {
-        return menuHolders.stream().filter(h -> h.getViewerName().equals(player.getName())).findFirst();
+        return REGISTRY.getHolder(player.getUniqueId());
+    }
+
+    static boolean isCurrentHolder(final @NotNull MenuHolder holder) {
+        return REGISTRY.isCurrentHolder(holder.getViewer().getUniqueId(), holder);
     }
 
     public static Optional<Menu> getOpenMenu(final @NotNull Player player) {
@@ -165,10 +178,19 @@ public class Menu {
     }
 
     public static Optional<Menu> getLastMenu(final @NotNull Player player) {
-        return Optional.ofNullable(lastOpenedMenus.get(player.getUniqueId()));
+        return REGISTRY.getLastMenu(player.getUniqueId());
     }
 
     public static void cleanInventory(final @NotNull DeluxeMenus plugin, final @NotNull Player player) {
+        if (!Bukkit.isPrimaryThread()) {
+            MainThread.run(plugin, () -> {
+                if (player.isOnline()) {
+                    cleanInventory(plugin, player);
+                }
+            });
+            return;
+        }
+
         for (final ItemStack itemStack : player.getInventory().getContents()) {
             if (itemStack == null) continue;
             if (!plugin.getMenuItemMarker().isMarked(itemStack)) continue;
@@ -184,6 +206,24 @@ public class Menu {
     }
 
     public static void closeMenu(final @NotNull DeluxeMenus plugin, final @NotNull Player player, final boolean close, final boolean executeCloseActions) {
+        if (!Bukkit.isPrimaryThread()) {
+            final Optional<MenuHolder> expectedHolder = getMenuHolder(player);
+            if (expectedHolder.isEmpty()) {
+                return;
+            }
+
+            MainThread.run(plugin, () -> {
+                if (isCurrentHolder(expectedHolder.get())) {
+                    closeMenuNow(plugin, player, close, executeCloseActions);
+                }
+            });
+            return;
+        }
+
+        closeMenuNow(plugin, player, close, executeCloseActions);
+    }
+
+    private static void closeMenuNow(final @NotNull DeluxeMenus plugin, final @NotNull Player player, final boolean close, final boolean executeCloseActions) {
         Optional<MenuHolder> optionalHolder = getMenuHolder(player);
         if (optionalHolder.isEmpty()) {
             return;
@@ -198,18 +238,26 @@ public class Menu {
             holder.getMenu().map(Menu::options).map(MenuOptions::closeHandler).flatMap(h -> h).ifPresent(h -> h.onClick(holder));
         }
 
-        if (close) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                player.closeInventory();
-                cleanInventory(plugin, player);
-            });
+        REGISTRY.removeHolder(player.getUniqueId(), holder);
+        holder.getMenu().ifPresent(menu -> REGISTRY.rememberLastMenu(player.getUniqueId(), menu));
+
+        if (close && player.isOnline()) {
+            player.closeInventory();
+            cleanInventory(plugin, player);
         }
-        menuHolders.remove(holder);
-        lastOpenedMenus.put(player.getUniqueId(), holder.getMenu().orElse(null));
     }
 
     public static void closeMenuForShutdown(final @NotNull DeluxeMenus plugin, final @NotNull Player player) {
-        getMenuHolder(player).ifPresent(MenuHolder::stopPlaceholderUpdate);
+        if (!Bukkit.isPrimaryThread()) {
+            MainThread.run(plugin, () -> closeMenuForShutdown(plugin, player));
+            return;
+        }
+
+        getMenuHolder(player).ifPresent(holder -> {
+            holder.stopPlaceholderUpdate();
+            holder.stopRefreshTask();
+            REGISTRY.removeHolder(player.getUniqueId(), holder);
+        });
 
         player.closeInventory();
         cleanInventory(plugin, player);
@@ -269,16 +317,27 @@ public class Menu {
     }
 
     public void openMenu(final @NotNull Player viewer, final @Nullable Map<String, String> args, final @Nullable Player placeholderPlayer) {
-        if (items == null || items.isEmpty()) {
+        if (!Bukkit.isPrimaryThread()) {
+            final Map<String, String> copiedArgs = args == null ? null : new HashMap<>(args);
+            MainThread.run(plugin, () -> openMenu(viewer, copiedArgs, placeholderPlayer));
             return;
         }
 
-        DeluxeMenusPreOpenMenuEvent preOpenEvent = new DeluxeMenusPreOpenMenuEvent(viewer);
-    Bukkit.getPluginManager().callEvent(preOpenEvent);
+        openMenuNow(viewer, args, placeholderPlayer);
+    }
 
-    if (preOpenEvent.isCancelled()) return;
+    private void openMenuNow(final @NotNull Player viewer, final @Nullable Map<String, String> args, final @Nullable Player placeholderPlayer) {
+        if (!viewer.isOnline() || !REGISTRY.isCurrentMenu(options.name(), this) || items == null || items.isEmpty()) {
+            return;
+        }
 
-    final MenuHolder holder = new MenuHolder(plugin, viewer);
+        final DeluxeMenusPreOpenMenuEvent preOpenEvent = new DeluxeMenusPreOpenMenuEvent(viewer);
+        Bukkit.getPluginManager().callEvent(preOpenEvent);
+        if (preOpenEvent.isCancelled()) {
+            return;
+        }
+
+        final MenuHolder holder = new MenuHolder(plugin, viewer);
         if (placeholderPlayer != null) {
             holder.setPlaceholderPlayer(placeholderPlayer);
         }
@@ -286,129 +345,93 @@ public class Menu {
         holder.parsePlaceholdersInArguments(this.options.parsePlaceholdersInArguments());
         holder.parsePlaceholdersAfterArguments(this.options.parsePlaceholdersAfterArguments());
 
-        if (!this.handleArgRequirements(holder)) {
+        if (!handleArgRequirements(holder) || !handleOpenRequirements(holder)) {
             return;
         }
 
-        if (!this.handleOpenRequirements(holder)) {
+        final Set<MenuItem> activeItems = new HashSet<>();
+        for (Entry<Integer, TreeMap<Integer, MenuItem>> entry : items.entrySet()) {
+            for (MenuItem item : entry.getValue().values()) {
+                final int slot = item.options().slot();
+                if (slot >= options.size()) {
+                    plugin.debug(DebugLevel.HIGHEST, Level.WARNING,
+                            "Item set to slot " + slot + " for menu: " + options.name() + " exceeds the inventory size!",
+                            "This item will not be added to the menu!");
+                    continue;
+                }
+
+                if (item.options().viewRequirements().isEmpty()
+                        || item.options().viewRequirements().get().evaluate(holder)) {
+                    activeItems.add(item);
+                    break;
+                }
+            }
+        }
+
+        if (activeItems.isEmpty()) {
             return;
         }
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        holder.setMenuName(options.name());
+        holder.setActiveItems(activeItems);
+        options.openHandler().ifPresent(handler -> handler.onClick(holder));
 
-            Set<MenuItem> activeItems = new HashSet<>();
+        final String title = StringUtils.color(holder.setPlaceholdersAndArguments(options.title()));
+        final Inventory inventory = options.type() == InventoryType.CHEST
+                ? Bukkit.createInventory(holder, options.size(), title)
+                : Bukkit.createInventory(holder, options.type(), title);
+        holder.setInventory(inventory);
 
-            for (Entry<Integer, TreeMap<Integer, MenuItem>> entry : items.entrySet()) {
-
-                for (MenuItem item : entry.getValue().values()) {
-
-                    int slot = item.options().slot();
-
-                    if (slot >= this.options.size()) {
-                        plugin.debug(
-                                DebugLevel.HIGHEST,
-                                Level.WARNING,
-                                "Item set to slot " + slot + " for menu: " + this.options.name() + " exceeds the inventory size!",
-                                "This item will not be added to the menu!"
-                        );
-                        continue;
-                    }
-
-                    if (item.options().viewRequirements().isPresent()) {
-
-                        if (item.options().viewRequirements().get().evaluate(holder)) {
-
-                            activeItems.add(item);
-                            break;
-                        }
-                    } else {
-
-                        activeItems.add(item);
-                        break;
-                    }
-                }
+        boolean updatePlaceholders = false;
+        for (MenuItem item : activeItems) {
+            final int slot = item.options().slot();
+            if (slot >= options.size()) {
+                continue;
             }
 
-            if (activeItems.isEmpty()) {
-                return;
+            ItemStack itemStack = item.getItemStack(holder);
+            if (itemStack == null) {
+                continue;
             }
 
-            holder.setMenuName(this.options.name());
-            holder.setActiveItems(activeItems);
+            inventory.setItem(slot, plugin.getMenuItemMarker().mark(itemStack));
+            updatePlaceholders |= item.options().updatePlaceholders();
+        }
 
-            this.options.openHandler().ifPresent(h -> h.onClick(holder));
+        if (isInMenu(viewer)) {
+            closeMenuNow(plugin, viewer, false, false);
+        }
 
-            String title = StringUtils.color(holder.setPlaceholdersAndArguments(this.options.title()));
+        viewer.openInventory(inventory);
+        if (!viewer.isOnline() || viewer.getOpenInventory().getTopInventory() != inventory) {
+            return;
+        }
 
-            Inventory inventory;
-
-            if (this.options.type() != InventoryType.CHEST) {
-                inventory = Bukkit.createInventory(holder, this.options.type(), title);
-            } else {
-                inventory = Bukkit.createInventory(holder, this.options.size(), title);
-            }
-
-            holder.setInventory(inventory);
-
-            boolean update = false;
-
-            for (MenuItem item : activeItems) {
-
-                ItemStack iStack = item.getItemStack(holder);
-
-                if (iStack == null) {
-                    continue;
-                }
-
-                iStack = plugin.getMenuItemMarker().mark(iStack);
-
-                int slot = item.options().slot();
-
-                if (slot >= this.options.size()) {
-                    plugin.debug(
-                            DebugLevel.HIGHEST,
-                            Level.WARNING,
-                            "Item set to slot " + slot + " for menu: " + this.options.name() + " exceeds the inventory size!",
-                            "This item will not be added to the menu!"
-                    );
-                    continue;
-                }
-
-                if (item.options().updatePlaceholders()) {
-                    update = true;
-                }
-
-                inventory.setItem(item.options().slot(), iStack);
-            }
-
-            final boolean updatePlaceholders = update;
-
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if(options.refresh()) {
-                    holder.startRefreshTask();
-                }
-
-                if (isInMenu(holder.getViewer())) {
-                    closeMenu(plugin, holder.getViewer(), false);
-                }
-
-                viewer.openInventory(inventory);
-                menuHolders.add(holder);
-
+        REGISTRY.setHolder(viewer.getUniqueId(), holder);
+        if (options.refresh()) {
+            holder.startRefreshTask();
+        }
         if (updatePlaceholders) {
-          holder.startUpdatePlaceholdersTask();
+            holder.startUpdatePlaceholdersTask();
         }
-      });
 
-      Bukkit.getScheduler().runTask(plugin, () -> {
-        DeluxeMenusOpenMenuEvent openEvent = new DeluxeMenusOpenMenuEvent(viewer, holder);
-        Bukkit.getPluginManager().callEvent(openEvent);
-      });
-    });
-  }
+        Bukkit.getPluginManager().callEvent(new DeluxeMenusOpenMenuEvent(viewer, holder));
+    }
 
     public void refreshForAll() {
-        menuHolders.stream().filter(menuHolder -> menuHolder.getMenuName().equalsIgnoreCase(options.name())).forEach(MenuHolder::refreshMenu);
+        if (!Bukkit.isPrimaryThread()) {
+            MainThread.run(plugin, this::refreshForAll);
+            return;
+        }
+
+        if (!REGISTRY.isCurrentMenu(options.name(), this)) {
+            return;
+        }
+
+        final List<MenuHolder> holders = REGISTRY.holdersSnapshot().stream()
+                .filter(menuHolder -> options.name().equalsIgnoreCase(menuHolder.getMenuName()))
+                .toList();
+        holders.forEach(MenuHolder::refreshMenu);
     }
 
     public @NotNull Map<Integer, TreeMap<Integer, MenuItem>> getMenuItems() {
@@ -428,7 +451,9 @@ public class Menu {
     }
 
     public int activeViewers() {
-        return (int) menuHolders.stream().filter(holder -> holder.getMenuName().equalsIgnoreCase(options.name())).count();
+        return (int) REGISTRY.holdersSnapshot().stream()
+                .filter(holder -> options.name().equalsIgnoreCase(holder.getMenuName()))
+                .count();
     }
 
 }

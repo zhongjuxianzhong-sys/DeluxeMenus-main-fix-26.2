@@ -9,10 +9,11 @@
 .settings/
 
 # Build tools
-.gradle/
-build/
-out/
-bin/
+/.gradle/
+/.kotlin/
+/build/
+/out/
+/bin/
 local.properties
 
 # OS
@@ -22,17 +23,18 @@ Thumbs.db
 # Logs
 *.log
 
-# Gradle wrapper
-gradle/wrapper/gradle-wrapper.jar
-
 # Build artifacts
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.ear
 /DeluxeMenus-*.jar
 
 # Local configuration
 gradle.properties.local
+
+# Agent instructions
+AGENTS.md
 
 # Test reports
 test-output/
@@ -44,3 +46,8 @@ test-results/
 *.bak
 *.swp
 *~
+
+# JVM crash and diagnostic files
+hs_err_pid*
+replay_pid*
+.attach_pid*

@@ -3,9 +3,11 @@ package com.extendedclip.deluxemenus.command.subcommand;
 import com.extendedclip.deluxemenus.DeluxeMenus;
 import com.extendedclip.deluxemenus.menu.Menu;
 import com.extendedclip.deluxemenus.utils.DumpUtils;
+import com.extendedclip.deluxemenus.utils.MainThread;
 import com.extendedclip.deluxemenus.utils.Messages;
 import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -51,9 +53,31 @@ public class DumpCommand extends SubCommand {
             return;
         }
 
-        DumpUtils.postDump(dump).whenComplete((result, error) -> {
+        final MainThread mainThread = new MainThread(plugin);
+        DumpUtils.postDump(dump).whenComplete((result, error) ->
+                handleCompletion(plugin, sender, result, error, mainThread)
+        );
+    }
+
+    static void handleCompletion(
+            final @NotNull DeluxeMenus plugin,
+            final @NotNull CommandSender sender,
+            final @Nullable String result,
+            final @Nullable Throwable error,
+            final @NotNull MainThread mainThread
+    ) {
+        mainThread.run(() -> {
+            if (sender instanceof Player player && !player.isOnline()) {
+                return;
+            }
+
             if (error != null) {
                 plugin.printStacktrace("Something went wrong while trying to create and post a dump!", error);
+                plugin.sms(sender, Messages.DUMP_FAILED);
+                return;
+            }
+
+            if (result == null || result.isBlank()) {
                 plugin.sms(sender, Messages.DUMP_FAILED);
                 return;
             }

@@ -336,13 +336,7 @@ public class DeluxeMenus extends JavaPlugin {
 
         final UpdateChecker updateChecker = new UpdateChecker(this);
         updateChecker.register();
-
-        if (updateChecker.updateAvailable()) {
-            this.debug(DebugLevel.HIGHEST, Level.INFO, "An update for DeluxeMenus (DeluxeMenus v" + updateChecker.getLatestVersion() + ")", "is available at https://www.spigotmc.org/resources/deluxemenus.11734/");
-            return;
-        }
-
-        this.debug(DebugLevel.HIGHEST, Level.INFO, "You are running the latest version of DeluxeMenus!");
+        updateChecker.start();
     }
 
     private void setUpMetrics() {
