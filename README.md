@@ -213,14 +213,9 @@ items:
 
 若问题只发生在特定物品来源，确认对应可选插件已启用且兼容 Paper 26.2；MMOItems 等 Hook 会在菜单主线程边界内调用，不应从异步线程单独调用。
 
-## 上游项目与支持
+## 上游项目
 
 - [DeluxeMenus GitHub](https://github.com/HelpChat/DeluxeMenus)
-- [问题跟踪](https://github.com/HelpChat/DeluxeMenus/issues)
-- [官方 Wiki](https://wiki.helpch.at/clips-plugins/deluxemenus/)
-- [Spigot 页面](https://www.spigotmc.org/resources/11734/)
-- [Discord 支持](https://helpch.at/discord)
-- [bStats](https://bstats.org/plugin/bukkit/DeluxeMenus/445)
 
 ## 许可证
 
