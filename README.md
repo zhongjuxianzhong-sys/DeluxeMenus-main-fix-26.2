@@ -43,13 +43,6 @@
 
 ## 构建和测试
 
-项目目标为 Java 25 和 Gradle 9.6。发布构建使用 Shadow 打包，输出 JAR 位于 `build/libs/`：
-
-```text
-DeluxeMenus-<version>.jar        # 可部署的 Shadow JAR
-DeluxeMenus-<version>-plain.jar  # 未打包依赖的普通 JAR
-```
-
 在 Windows PowerShell 中：
 
 ```powershell
