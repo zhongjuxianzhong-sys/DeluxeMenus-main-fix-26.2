@@ -66,6 +66,10 @@ public class MenuItem {
     private final DeluxeMenus plugin;
     private final MenuItemOptions options;
 
+    private static NamespacedKey toNamespacedKey(final String value) {
+        return NamespacedKey.fromString(value.toLowerCase(Locale.ROOT).replaceAll("\\s+", "_"));
+    }
+
     public MenuItem(@NotNull final DeluxeMenus plugin, @NotNull final MenuItemOptions options) {
         this.plugin = plugin;
         this.options = options;
@@ -343,8 +347,8 @@ public class MenuItem {
             final Optional<String> trimPatternName = this.options.trimPattern();
 
             if (trimMaterialName.isPresent() && trimPatternName.isPresent()) {
-                final NamespacedKey trimMaterialKey = NamespacedKey.fromString(holder.setPlaceholdersAndArguments(trimMaterialName.get()));
-                final NamespacedKey trimPatternKey = NamespacedKey.fromString(holder.setPlaceholdersAndArguments(trimPatternName.get()));
+                final NamespacedKey trimMaterialKey = toNamespacedKey(holder.setPlaceholdersAndArguments(trimMaterialName.get()));
+                final NamespacedKey trimPatternKey = toNamespacedKey(holder.setPlaceholdersAndArguments(trimPatternName.get()));
                 final TrimMaterial trimMaterial = trimMaterialKey == null ? null : RegistryAccess.registryAccess()
                         .getRegistry(RegistryKey.TRIM_MATERIAL)
                         .get(trimMaterialKey);
