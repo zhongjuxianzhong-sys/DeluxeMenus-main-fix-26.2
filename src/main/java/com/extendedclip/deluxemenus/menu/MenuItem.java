@@ -12,10 +12,11 @@ import com.extendedclip.deluxemenus.utils.ItemUtils;
 import com.extendedclip.deluxemenus.utils.StringUtils;
 import com.extendedclip.deluxemenus.utils.VersionHelper;
 import com.google.common.collect.ImmutableMultimap;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
 import org.bukkit.Material;
-import org.bukkit.Registry;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Banner;
 import org.bukkit.block.data.BlockData;
@@ -342,8 +343,14 @@ public class MenuItem {
             final Optional<String> trimPatternName = this.options.trimPattern();
 
             if (trimMaterialName.isPresent() && trimPatternName.isPresent()) {
-                final TrimMaterial trimMaterial = Registry.TRIM_MATERIAL.match(holder.setPlaceholdersAndArguments(trimMaterialName.get()));
-                final TrimPattern trimPattern = Registry.TRIM_PATTERN.match(holder.setPlaceholdersAndArguments(trimPatternName.get()));
+                final NamespacedKey trimMaterialKey = NamespacedKey.fromString(holder.setPlaceholdersAndArguments(trimMaterialName.get()));
+                final NamespacedKey trimPatternKey = NamespacedKey.fromString(holder.setPlaceholdersAndArguments(trimPatternName.get()));
+                final TrimMaterial trimMaterial = trimMaterialKey == null ? null : RegistryAccess.registryAccess()
+                        .getRegistry(RegistryKey.TRIM_MATERIAL)
+                        .get(trimMaterialKey);
+                final TrimPattern trimPattern = trimPatternKey == null ? null : RegistryAccess.registryAccess()
+                        .getRegistry(RegistryKey.TRIM_PATTERN)
+                        .get(trimPatternKey);
 
                 if (trimMaterial != null && trimPattern != null) {
                     final ArmorTrim armorTrim = new ArmorTrim(trimMaterial, trimPattern);
@@ -418,7 +425,7 @@ public class MenuItem {
                     plugin.debug(
                             DebugLevel.HIGHEST,
                             Level.INFO,
-                            "Failed to add enchantment " + entry.getKey().getName() + " to item " + itemStack.getType()
+                            "Failed to add enchantment " + entry.getKey().getKey() + " to item " + itemStack.getType()
                     );
                 }
             }

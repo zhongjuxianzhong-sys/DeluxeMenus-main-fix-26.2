@@ -36,9 +36,12 @@ import com.extendedclip.deluxemenus.utils.LocationUtils;
 import com.extendedclip.deluxemenus.utils.VersionHelper;
 import com.google.common.base.Enums;
 import com.google.common.primitives.Ints;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.DyeColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.block.banner.PatternType;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
@@ -710,7 +713,13 @@ public class DeluxeMenusConfig {
 
                     try {
                         color = DyeColor.valueOf(metaParts[0].toUpperCase());
-                        type = PatternType.valueOf(metaParts[1].toUpperCase());
+                        final NamespacedKey patternKey = NamespacedKey.fromString(metaParts[1].toLowerCase(Locale.ROOT));
+                        type = patternKey == null ? null : RegistryAccess.registryAccess()
+                                .getRegistry(RegistryKey.BANNER_PATTERN)
+                                .get(patternKey);
+                        if (type == null) {
+                            throw new IllegalArgumentException("No pattern type found with the name " + metaParts[1]);
+                        }
                     } catch (IllegalArgumentException exception) {
                         plugin.debug(DebugLevel.HIGHEST, Level.WARNING, "Banner Meta for item: " + key + ", meta entry: " + e + " is invalid! Skipping this entry!");
 
