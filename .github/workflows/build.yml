@@ -39,30 +39,8 @@ jobs:
         run: ./gradlew build --no-daemon
 
       - name: Upload build
-        uses: actions/upload-artifact@v4.3.3
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: 'DeluxeMenus build ${{ env.BUILD_NUMBER }}'
           path: build/libs
           if-no-files-found: error
-
-  dependency-submission:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v6
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-
-      - name: Setup Gradle 9.6 for dependency graph
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.6.0'
-          dependency-graph: generate-and-submit
-
-      - name: Generate and submit dependency graph
-        run: ./gradlew build --no-daemon
