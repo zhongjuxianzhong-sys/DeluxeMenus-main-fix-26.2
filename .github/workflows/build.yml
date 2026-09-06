@@ -25,18 +25,23 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
-      - name: Add SHORT_SHA env property with commit short sha
-        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> "$GITHUB_ENV"
+      - name: Prepare build metadata
+        run: |
+          SHORT_SHA="${GITHUB_SHA::8}"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            BUILD_NUMBER="PR-${{ github.event.number }}-${SHORT_SHA}"
+          else
+            BUILD_NUMBER="${SHORT_SHA}"
+          fi
+          echo "BUILD_NUMBER=${BUILD_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Build with Gradle 9.6
-        run: gradle build --no-daemon
-        env:
-          BUILD_NUMBER: 'PR-${{ github.event.number }}-${{ env.SHORT_SHA }}'
+        run: ./gradlew build --no-daemon
 
       - name: Upload build
         uses: actions/upload-artifact@v4.3.3
         with:
-          name: 'DeluxeMenus build PR-${{ github.event.number }}-${{ env.SHORT_SHA }}'
+          name: 'DeluxeMenus build ${{ env.BUILD_NUMBER }}'
           path: build/libs
           if-no-files-found: error
 
@@ -60,4 +65,4 @@ jobs:
           dependency-graph: generate-and-submit
 
       - name: Generate and submit dependency graph
-        run: gradle build --no-daemon
+        run: ./gradlew build --no-daemon
